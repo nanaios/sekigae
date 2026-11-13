@@ -1,3 +1,17 @@
+import '@material/web/button/filled-button.js';
+import '@material/web/button/filled-tonal-button.js';
+import '@material/web/button/text-button.js';
+import '@material/web/checkbox/checkbox.js';
+import '@material/web/divider/divider.js';
+import '@material/web/elevation/elevation.js';
+import '@material/web/focus/md-focus-ring.js';
+import '@material/web/icon/icon.js';
+import '@material/web/iconbutton/icon-button.js';
+import '@material/web/list/list.js';
+import '@material/web/list/list-item.js';
+import '@material/web/ripple/ripple.js';
+import '@material/web/switch/switch.js';
+import '@material/web/textfield/outlined-text-field.js';
 import { html, nothing, render, type TemplateResult } from 'lit-html';
 import { classMap } from 'lit-html/directives/class-map.js';
 import { live } from 'lit-html/directives/live.js';
@@ -12,6 +26,7 @@ import {
 	LIMITS,
 	normalizeArrangement,
 	parseSeatKey,
+	pruneConfig,
 	scrambleArrangement,
 	type SeatKey,
 	seatKey,
@@ -20,7 +35,6 @@ import {
 	shuffleSeats,
 	studentNumbers,
 	usableSeats,
-	pruneConfig,
 } from './model';
 import {
 	fileStamp,
@@ -33,6 +47,7 @@ import {
 	serializeSeating,
 } from './seatfile';
 import { type AppState, loadState, saveState, type Speed } from './store';
+import { cycleThemeMode, getThemeMode, studentColorVars, type ThemeMode } from './theme';
 import './style.css';
 
 const app = document.getElementById('app')!;
@@ -113,7 +128,8 @@ function flipFrom(before: Map<number, DOMRect>, o: FlipOpts): Promise<void> {
 				{ transform: `translate(${dx / 2}px, ${dy / 2 - lift}px) scale(${1 + lift / 150}) rotate(${spin / 2}deg)`, offset: 0.5 },
 				{ transform: `translate(0px, 0px) scale(1) rotate(${spin}deg)` },
 			],
-			{ duration: o.duration, delay: (o.stagger ?? 0) * i++, easing: 'cubic-bezier(.3,.7,.2,1)', fill: 'backwards' },
+			// Material の「強調」イージング
+			{ duration: o.duration, delay: (o.stagger ?? 0) * i++, easing: 'cubic-bezier(.2,0,0,1)', fill: 'backwards' },
 		);
 		const done = () => el.classList.remove('moving');
 		jobs.push(anim.finished.then(done, done));
@@ -151,7 +167,7 @@ function commit(mutate: (s: AppState) => void, opts: { animate?: boolean; keepKi
 let toastSeq = 0;
 function toast(text: string, kind: Toast['kind'] = 'info') {
 	const t: Toast = { id: ++toastSeq, text, kind };
-	ui.toasts = [...ui.toasts, t].slice(-4);
+	ui.toasts = [...ui.toasts, t].slice(-3);
 	update();
 	setTimeout(
 		() => {
@@ -489,11 +505,11 @@ function openPopover(k: SeatKey, el: HTMLElement) {
 	if (ui.busy) return;
 	if (ui.popover?.key === k) return closePopover();
 	const r = el.getBoundingClientRect();
-	const above = r.bottom + 300 > innerHeight && r.top > 300;
+	const above = r.bottom + 320 > innerHeight && r.top > 320;
 	ui.popover = { key: k, x: Math.min(Math.max(r.left + r.width / 2, 160), innerWidth - 160), y: above ? r.top - 8 : r.bottom + 8, above };
 	ui.pinInput = '';
 	update();
-	app.querySelector<HTMLElement>('.popover button')?.focus();
+	app.querySelector<HTMLElement>('.popover .menu-item')?.focus({ preventScroll: true });
 }
 
 function closePopover() {
@@ -538,7 +554,9 @@ addEventListener('drop', (e) => {
 	void importFiles(e.dataTransfer.files);
 });
 
-// ---------------- 表示 ----------------
+// ---------------- 表示（Material 3） ----------------
+
+const icon = (name: string, slot?: string) => html`<md-icon slot=${slot ?? nothing} aria-hidden="true">${name}</md-icon>`;
 
 const logo = html`<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
 	<rect x="2" y="3" width="28" height="5" rx="2" class="logo-board" />
@@ -550,32 +568,34 @@ const logo = html`<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
 	<rect x="21" y="21" width="7" height="6" rx="1.6" class="logo-b" />
 </svg>`;
 
-const hue = (n: number) => (n * 137.508) % 360;
+const THEME_ICON: Record<ThemeMode, string> = { auto: 'brightness_auto', light: 'light_mode', dark: 'dark_mode' };
+const THEME_LABEL: Record<ThemeMode, string> = { auto: 'テーマ：自動（端末に合わせる）', light: 'テーマ：ライト', dark: 'テーマ：ダーク' };
+
+function onCycleTheme() {
+	const m = cycleThemeMode();
+	update();
+	toast(THEME_LABEL[m]);
+}
 
 function view(): TemplateResult {
+	const tm = getThemeMode();
 	return html`
 		${ui.dopa ? dopaLayer() : nothing}
-		<header class="topbar">
+		<header class="top-app-bar">
 			<button class="brand" type="button" @click=${secretHit} aria-label="席替え">
+				<md-ripple></md-ripple>
+				<md-focus-ring></md-focus-ring>
 				${logo}
-				<span class="brand-text">
-					<strong>${ui.dopa ? '席替えガチャ' : '席替え'}</strong>
-					<small>${ui.dopa ? 'DOPAGAKI MODE' : 'SEKIGAE'}</small>
-				</span>
 			</button>
-			<nav class="top-actions">
-				<button
-					type="button"
-					class="ghost"
-					@click=${() => commit((s) => void (s.teacherView = !s.teacherView), { animate: true, keepKind: true })}
-					?disabled=${ui.busy}
-					title="黒板が上（生徒から見た向き）／黒板が下（先生から見た向き）を切り替えます"
-				>
-					${state.teacherView ? '🧑‍🎓 生徒から見た向きにする' : '🧑‍🏫 先生から見た向きにする'}
-				</button>
-				<button type="button" class="ghost" @click=${openFullscreen}>⛶ 全画面</button>
-				<button type="button" class="ghost" @click=${() => window.print()}>🖨 印刷</button>
-			</nav>
+			<div class="app-title">
+				<span class="title">${ui.dopa ? '席替えガチャ' : '席替え'}</span>
+				<span class="subtitle">${ui.dopa ? 'DOPAGAKI MODE' : 'SEKIGAE'}</span>
+			</div>
+			<div class="app-actions">
+				<md-icon-button @click=${onCycleTheme} title=${THEME_LABEL[tm]} aria-label=${THEME_LABEL[tm]}>${icon(THEME_ICON[tm])}</md-icon-button>
+				<md-icon-button @click=${openFullscreen} title="全画面で表示" aria-label="全画面で表示">${icon('fullscreen')}</md-icon-button>
+				<md-icon-button @click=${() => window.print()} title="印刷" aria-label="印刷">${icon('print')}</md-icon-button>
+			</div>
 		</header>
 		${ui.dopa
 			? html`<div class="ticker" aria-hidden="true">
@@ -585,27 +605,26 @@ function view(): TemplateResult {
 				</div>`
 			: nothing}
 		<main class="layout">
-			<section class="stage">
-				${stageHead()} ${boardView()} ${actionsView()}
-			</section>
+			<section class="stage">${stageHead()} ${boardView()} ${actionsView()}</section>
 			<aside class="panel">
 				${layoutPanel()} ${studentsPanel()} ${pinsPanel()} ${historyPanel()} ${optionsPanel()}
-				<p class="privacy">🔒 データはこのブラウザの中と、保存したファイルにだけ残ります。サーバーには送信しません。</p>
+				<p class="privacy">${icon('lock')}<span>データはこのブラウザの中と、保存したファイルにだけ残ります。サーバーには送信しません。</span></p>
 			</aside>
 		</main>
 		${popoverView()}
-		<div class="toasts" role="status" aria-live="polite">
+		<div class="snackbars" role="status" aria-live="polite">
 			${repeat(
 				ui.toasts,
 				(t) => t.id,
-				(t) => html`<div class="toast ${t.kind}">${t.text}</div>`,
+				(t) =>
+					html`<div class="snackbar ${t.kind}">${icon(t.kind === 'error' ? 'warning' : t.kind === 'success' ? 'check_circle' : 'info')}<span>${t.text}</span></div>`,
 			)}
 		</div>
-		${ui.showSkip ? html`<button class="skip" type="button" @click=${() => (ui.skip = true)}>スキップ ▶▶</button>` : nothing}
+		${ui.showSkip ? html`<button class="skip" type="button" @click=${() => (ui.skip = true)}>スキップ ${icon('fast_forward')}</button>` : nothing}
 		${ui.dopa
-			? html`<button class="mute" type="button" @click=${toggleMute} aria-label="音のオン・オフ">${sound.muted ? '🔇' : '🔊'}</button>`
+			? html`<button class="mute" type="button" @click=${toggleMute} aria-label="音のオン・オフ">${icon(sound.muted ? 'volume_off' : 'volume_up')}</button>`
 			: nothing}
-		${ui.dragging ? html`<div class="dropzone">📂 ここにドロップして「前回までの席」に読み込み</div>` : nothing}
+		${ui.dragging ? html`<div class="dropzone">${icon('upload_file')}<span>ここにドロップして「前回までの席」に読み込み</span></div>` : nothing}
 	`;
 }
 
@@ -624,6 +643,27 @@ function openFullscreen() {
 	const el = app.querySelector('.stage');
 	if (!el?.requestFullscreen) return toast('このブラウザでは全画面にできません', 'error');
 	el.requestFullscreen().catch(() => toast('全画面にできませんでした', 'error'));
+}
+
+/** Material 3 のセグメントボタン（単一選択） */
+function segmented<T extends string>(options: [T, string, string?][], value: T, onSelect: (v: T) => void, label: string, wide = false) {
+	return html`<div class=${classMap({ segmented: true, wide })} role="radiogroup" aria-label=${label}>
+		${options.map(
+			([v, text, ic]) => html`<button
+				type="button"
+				role="radio"
+				aria-checked=${v === value ? 'true' : 'false'}
+				class=${classMap({ seg: true, selected: v === value })}
+				?disabled=${ui.busy}
+				@click=${() => v !== value && onSelect(v)}
+			>
+				<md-ripple></md-ripple>
+				<md-focus-ring inward></md-focus-ring>
+				${v === value ? icon('check') : ic ? icon(ic) : nothing}
+				<span>${text}</span>
+			</button>`,
+		)}
+	</div>`;
 }
 
 function currentLabel(): { kind: string; title: string } {
@@ -645,18 +685,29 @@ function stageHead() {
 	const cfg = state.config;
 	const pins = activePins(cfg).size;
 	return html`<div class="stage-head">
-		<div class="now">
-			<span class="now-kind">${label.kind}</span>
-			<span class="now-title">${label.title}</span>
-			${state.savedId ? html`<span class="saved">✓ 保存済み</span>` : nothing}
+			<div class="now">
+				<span class="now-kind">${label.kind}</span>
+				<span class="now-title">${label.title}</span>
+				${state.savedId ? html`<span class="saved">${icon('check_circle')}保存済み</span>` : nothing}
+			</div>
+			<div class="stats">
+				<span title="生徒">${icon('group')}${studentNumbers(cfg).length}人</span>
+				<span title="使える席">${icon('event_seat')}${usableSeats(cfg).length}席</span>
+				${pins ? html`<span title="固定">${icon('push_pin')}${pins}人</span>` : nothing}
+			</div>
+			<div class="print-only print-title">席替え ${label.title}</div>
 		</div>
-		<div class="stats">
-			<span>👥 ${studentNumbers(cfg).length}人</span>
-			<span>🪑 ${usableSeats(cfg).length}席</span>
-			${pins ? html`<span>📌 ${pins}人</span>` : nothing}
-		</div>
-		<div class="print-only print-title">席替え ${label.title}</div>
-	</div>`;
+		<div class="view-row">
+			${segmented<'student' | 'teacher'>(
+				[
+					['student', '生徒から見た向き', 'group'],
+					['teacher', '先生から見た向き', 'co_present'],
+				],
+				state.teacherView ? 'teacher' : 'student',
+				(v) => commit((s) => void (s.teacherView = v === 'teacher'), { animate: true, keepKind: true }),
+				'表示の向き',
+			)}
+		</div>`;
 }
 
 function boardView() {
@@ -684,7 +735,8 @@ function boardView() {
 				aria-label=${`${seatLabel(k)}${isOff ? '・使えない席' : who !== undefined ? `・${who}番` : '・空席'}${pinned ? '・固定' : ''}`}
 				@click=${(e: Event) => openPopover(k, e.currentTarget as HTMLElement)}
 			>
-				${isOff ? html`<span class="off-mark">✕</span>` : who === undefined ? html`<span class="empty-mark">空席</span>` : nothing}
+				<md-ripple></md-ripple>
+				${isOff ? html`<md-icon class="off-mark" aria-hidden="true">block</md-icon>` : who === undefined ? html`<span class="empty-mark">空席</span>` : nothing}
 			</button>`);
 		}
 	}
@@ -692,45 +744,46 @@ function boardView() {
 	const front = html`<div class="front"><span class="blackboard">黒板</span><span class="desk">教卓</span></div>`;
 	const windowLeft = (cfg.windowSide === 'left') !== tv;
 	return html`<div class=${classMap({ board: true, teacher: tv, landed: ui.landed })}>
-		${tv ? nothing : front}
-		<div class="board-mid">
-			<div class="side-label ${windowLeft ? 'window' : 'hall'}">${windowLeft ? '窓側' : '廊下側'}</div>
-			<div class="grid" style="--rows:${cfg.rows};--cols:${cfg.cols}">
-				${seats}
-				${repeat(
-					nums,
-					(n) => n,
-					(n) => {
-						const k = seatOfNum.get(n)!;
-						const { row, col } = parseSeatKey(k);
-						const down = ui.facedown && !ui.revealed.has(n);
-						const rr = rarity?.get(k);
-						return html`<div
-							class=${classMap({ card: true, pinned: pins.get(k) === n, down, [`r-${rr}`]: !!rr && !down })}
-							data-num=${n}
-							style="${place(row, col)};--h:${hue(n)}"
-						>
-							<div class="card-inner">
-								<div class="card-front">
-									<span class="num">${n}</span>
-									${pins.get(k) === n ? html`<span class="pin" title="固定">📌</span>` : nothing}
-									${rr && !down ? html`<span class="rar">${rr}</span>` : nothing}
+			${tv ? nothing : front}
+			<div class="board-mid">
+				<div class="side-label ${windowLeft ? 'window' : 'hall'}">${windowLeft ? '窓側' : '廊下側'}</div>
+				<div class="grid" style="--rows:${cfg.rows};--cols:${cfg.cols}">
+					${seats}
+					${repeat(
+						nums,
+						(n) => n,
+						(n) => {
+							const k = seatOfNum.get(n)!;
+							const { row, col } = parseSeatKey(k);
+							const down = ui.facedown && !ui.revealed.has(n);
+							const rr = rarity?.get(k);
+							return html`<div
+								class=${classMap({ card: true, pinned: pins.get(k) === n, down, [`r-${rr}`]: !!rr && !down })}
+								data-num=${n}
+								style="${place(row, col)};${studentColorVars(n)}"
+							>
+								<div class="card-inner">
+									<div class="card-front">
+										<span class="num">${n}</span>
+										${pins.get(k) === n ? html`<md-icon class="pin" title="固定">push_pin</md-icon>` : nothing}
+										${rr && !down ? html`<span class="rar">${rr}</span>` : nothing}
+									</div>
+									<div class="card-back"><span>?</span></div>
 								</div>
-								<div class="card-back"><span>?</span></div>
-							</div>
-						</div>`;
-					},
-				)}
+							</div>`;
+						},
+					)}
+				</div>
+				<div class="side-label ${windowLeft ? 'hall' : 'window'}">${windowLeft ? '廊下側' : '窓側'}</div>
 			</div>
-			<div class="side-label ${windowLeft ? 'hall' : 'window'}">${windowLeft ? '廊下側' : '窓側'}</div>
+			${tv ? front : nothing}
 		</div>
-		${tv ? front : nothing}
-	</div>
-	${unseated.length
-		? html`<div class="unseated">
-				<b>⚠ 席が ${unseated.length} 席足りません</b>（座れていない人：${unseated.map((n) => html`<span class="chip">${n}</span>`)}）
-			</div>`
-		: nothing}`;
+		${unseated.length
+			? html`<div class="unseated">
+					${icon('warning')}
+					<span><b>席が ${unseated.length} 席足りません</b>（座れていない人：${unseated.map((n) => html`<span class="num-chip">${n}</span>`)}）</span>
+				</div>`
+			: nothing}`;
 }
 
 function actionsView() {
@@ -738,72 +791,80 @@ function actionsView() {
 	const canShuffle = !ui.busy && unseated.length === 0 && studentNumbers(state.config).length > 0;
 	const needSave = state.kind === 'shuffled' && !state.savedId;
 	return html`<div class="actions">
-			<button class="shuffle-btn" type="button" @click=${doShuffle} ?disabled=${!canShuffle}>
-				${ui.busy ? (ui.dopa ? '🎰 ガチャ中…' : '🔀 席替え中…') : ui.dopa ? '🎰 席替えガチャを回す!!' : '🔀 席替えする'}
-			</button>
-			<button class=${classMap({ 'save-btn': true, attention: needSave })} type="button" @click=${saveCurrent} ?disabled=${ui.busy || unseated.length > 0}>
-				💾 ${state.savedId ? 'もう一度保存' : 'この席順を保存'}
-			</button>
+			<md-filled-button class="shuffle-btn" @click=${doShuffle} ?disabled=${!canShuffle}>
+				${icon(ui.dopa ? 'casino' : 'shuffle', 'icon')}
+				${ui.busy ? (ui.dopa ? 'ガチャ中…' : '席替え中…') : ui.dopa ? '席替えガチャを回す!!' : '席替えする'}
+			</md-filled-button>
+			<md-filled-tonal-button class=${classMap({ 'save-btn': true, attention: needSave })} @click=${saveCurrent} ?disabled=${ui.busy || unseated.length > 0}>
+				${icon('save', 'icon')} ${state.savedId ? 'もう一度保存' : 'この席順を保存'}
+			</md-filled-tonal-button>
 		</div>
 		<p class="avoid-note">
 			${state.avoidHistory && enabled > 0
-				? html`✅ 前回までの席 <b>${enabled} 件</b>と同じ席にならないように席替えします（固定の人をのぞく）`
-				: state.avoidHistory
-					? '「前回までの席」を読み込むと、前と同じ席にならないように席替えできます'
-					: '前回までの席は気にせずに席替えします'}
-			${needSave ? html`<br /><span class="save-hint">💡 この席に決めたら「保存」しておくと、次回の席替えで被らないようにできます</span>` : nothing}
-		</p>`;
+				? html`${icon('check_circle')}<span>前回までの席 <b>${enabled} 件</b>と同じ席にならないように席替えします（固定の人をのぞく）</span>`
+				: html`${icon('info')}<span
+							>${state.avoidHistory
+								? '「前回までの席」を読み込むと、前と同じ席にならないように席替えできます'
+								: '前回までの席は気にせずに席替えします'}</span
+						>`}
+		</p>
+		${needSave
+			? html`<p class="avoid-note save-hint">${icon('lightbulb')}<span>この席に決めたら「保存」しておくと、次回の席替えで被らないようにできます</span></p>`
+			: nothing}`;
 }
 
-function stepper(label: string, value: number, min: number, max: number, set: (v: number) => void, unit: string) {
-	return html`<div class="stepper">
-		<span class="lbl">${label}</span>
-		<button type="button" class="step" @click=${() => set(value - 1)} ?disabled=${value <= min || ui.busy} aria-label="${label}を1減らす">−</button>
-		<input
-			type="number"
-			inputmode="numeric"
-			min=${min}
-			max=${max}
-			aria-label=${label}
-			.value=${live(String(value))}
-			?disabled=${ui.busy}
-			@change=${(e: Event) => set(Number((e.target as HTMLInputElement).value))}
-		/>
-		<button type="button" class="step" @click=${() => set(value + 1)} ?disabled=${value >= max || ui.busy} aria-label="${label}を1増やす">＋</button>
-		<span class="unit">${unit}</span>
-	</div>`;
+function numberField(label: string, value: number, min: number, max: number, set: (v: number) => void, unit: string) {
+	return html`<md-outlined-text-field
+		class="num-field"
+		label=${label}
+		type="number"
+		inputmode="numeric"
+		no-spinner
+		suffix-text=${unit}
+		min=${min}
+		max=${max}
+		.value=${live(String(value))}
+		?disabled=${ui.busy}
+		@change=${(e: Event) => set(Number((e.target as HTMLInputElement).value))}
+	>
+		<md-icon-button slot="leading-icon" @click=${() => set(value - 1)} ?disabled=${value <= min || ui.busy} aria-label="${label}を1減らす">
+			${icon('remove')}
+		</md-icon-button>
+		<md-icon-button slot="trailing-icon" @click=${() => set(value + 1)} ?disabled=${value >= max || ui.busy} aria-label="${label}を1増やす">
+			${icon('add')}
+		</md-icon-button>
+	</md-outlined-text-field>`;
 }
+
+const cardTitle = (ic: string, text: string, extra: unknown = nothing) => html`<h2 class="card-title">${icon(ic)}<span>${text}</span>${extra}</h2>`;
 
 function layoutPanel() {
 	const cfg = state.config;
 	const offCount = cfg.disabled.length;
-	return html`<section class="box">
-		<h2>🏫 教室のレイアウト</h2>
-		${stepper('縦', cfg.rows, LIMITS.rows.min, LIMITS.rows.max, (v) => setDim('rows', v), '席')}
-		${stepper('横', cfg.cols, LIMITS.cols.min, LIMITS.cols.max, (v) => setDim('cols', v), '席')}
-		<div class="field">
-			<span class="lbl">窓の位置</span>
-			<div class="seg">
-				${(['left', 'right'] as const).map(
-					(side) => html`<button
-						type="button"
-						class=${cfg.windowSide === side ? 'on' : ''}
-						?disabled=${ui.busy}
-						@click=${() => commit((s) => void (s.config.windowSide = side), { keepKind: true })}
-					>
-						${side === 'left' ? '左側' : '右側'}
-					</button>`,
-				)}
-			</div>
+	return html`<section class="panel-card">
+		${cardTitle('school', '教室のレイアウト')}
+		<div class="field-grid">
+			${numberField('縦', cfg.rows, LIMITS.rows.min, LIMITS.rows.max, (v) => setDim('rows', v), '席')}
+			${numberField('横', cfg.cols, LIMITS.cols.min, LIMITS.cols.max, (v) => setDim('cols', v), '席')}
 		</div>
-		<p class="hint">👆 席をクリックすると、<b>使えない席</b>にしたり<b>番号を固定</b>したりできます。</p>
+		<div class="field-row">
+			<span class="field-label">窓の位置</span>
+			${segmented<'left' | 'right'>(
+				[
+					['left', '左側'],
+					['right', '右側'],
+				],
+				cfg.windowSide,
+				(side) => commit((s) => void (s.config.windowSide = side), { keepKind: true }),
+				'窓の位置',
+			)}
+		</div>
+		<p class="hint">${icon('info')}<span>席をクリックすると、<b>使えない席</b>にしたり<b>番号を固定</b>したりできます。</span></p>
 		${offCount
-			? html`<p class="sub">
-					使えない席：${offCount} 席
-					<button type="button" class="link" ?disabled=${ui.busy} @click=${() => commit((s) => void (s.config.disabled = []), { animate: true })}>
-						すべて使えるようにする
-					</button>
-				</p>`
+			? html`<div class="sub-row">
+					<span>使えない席：${offCount} 席</span>
+					<md-text-button ?disabled=${ui.busy} @click=${() => commit((s) => void (s.config.disabled = []), { animate: true })}>すべて使えるようにする</md-text-button>
+				</div>`
 			: nothing}
 	</section>`;
 }
@@ -811,85 +872,88 @@ function layoutPanel() {
 function studentsPanel() {
 	const cfg = state.config;
 	const count = studentNumbers(cfg).length;
-	return html`<section class="box">
-		<h2>👥 生徒</h2>
-		${stepper('人数', cfg.studentCount, LIMITS.students.min, LIMITS.students.max, setCount, '番まで')}
-		<label class="field col">
-			<span class="lbl">欠番（使わない番号）</span>
-			<input
-				type="text"
+	return html`<section class="panel-card">
+		${cardTitle('group', '生徒')}
+		<div class="field-stack">
+			${numberField('人数（出席番号の最後）', cfg.studentCount, LIMITS.students.min, LIMITS.students.max, setCount, '番まで')}
+			<md-outlined-text-field
+				label="欠番（使わない番号）"
 				placeholder="例：12, 25"
+				supporting-text=${`出席番号 1〜${cfg.studentCount}${cfg.missing.length ? `（${cfg.missing.join('・')} 番をのぞく）` : ''}・${count} 人`}
 				.value=${live(cfg.missing.join(', '))}
 				?disabled=${ui.busy}
 				@change=${(e: Event) => setMissing((e.target as HTMLInputElement).value)}
-			/>
-		</label>
-		<p class="sub">出席番号 1〜${cfg.studentCount}${cfg.missing.length ? `（${cfg.missing.join('・')} 番をのぞく）` : ''}・<b>${count} 人</b></p>
+			></md-outlined-text-field>
+		</div>
 	</section>`;
 }
 
 function pinsPanel() {
 	const pins = [...activePins(state.config)].sort((a, b) => a[1] - b[1]);
-	return html`<section class="box">
-		<h2>📌 固定する人</h2>
+	return html`<section class="panel-card">
+		${cardTitle('push_pin', '固定する人')}
 		${pins.length
-			? html`<ul class="pins">
+			? html`<md-list class="list">
 					${pins.map(
-						([k, n]) => html`<li>
-							<span class="chip">${n}番</span>
-							<span class="pin-seat">${seatLabel(k)}</span>
-							<button type="button" class="icon" ?disabled=${ui.busy} @click=${() => unpin(k)} aria-label="${n}番の固定を解除" title="固定を解除">✕</button>
-						</li>`,
+						([k, n]) => html`<md-list-item>
+							<span slot="start" class="num-avatar">${n}</span>
+							<div slot="headline">${n}番</div>
+							<div slot="supporting-text">${seatLabel(k)}</div>
+							<md-icon-button slot="end" ?disabled=${ui.busy} @click=${() => unpin(k)} aria-label="${n}番の固定を解除" title="固定を解除">
+								${icon('close')}
+							</md-icon-button>
+						</md-list-item>`,
 					)}
-				</ul>`
+				</md-list>`
 			: html`<p class="empty">席をクリック →「番号を指定して固定」で、特定の番号の人をその席に固定できます（例：目が悪い人を前の席に）。</p>`}
 	</section>`;
 }
 
 function historyPanel() {
 	const h = state.history;
-	return html`<section class="box">
-		<h2>🗂 前回までの席 <span class="count">${h.length}/10</span></h2>
-		<label class="check">
-			<input
-				type="checkbox"
-				.checked=${live(state.avoidHistory)}
+	return html`<section class="panel-card">
+		${cardTitle('history', '前回までの席', html`<span class="count">${h.length}/10</span>`)}
+		<label class="switch-row">
+			<md-switch
+				icons
+				.selected=${live(state.avoidHistory)}
 				?disabled=${ui.busy}
-				@change=${(e: Event) => commit((s) => void (s.avoidHistory = (e.target as HTMLInputElement).checked), { keepKind: true })}
-			/>
+				@change=${(e: Event) => commit((s) => void (s.avoidHistory = (e.target as HTMLInputElement & { selected: boolean }).selected), { keepKind: true })}
+			></md-switch>
 			<span>前の席と<b>絶対に被らない</b>ようにする</span>
 		</label>
-		<div class="row">
-			<label class="btn file-btn ${ui.busy ? 'disabled' : ''}">
-				📂 ファイルを読み込む
-				<input
-					type="file"
-					accept=".json,application/json"
-					multiple
-					hidden
-					?disabled=${ui.busy}
-					@change=${(e: Event) => {
-						const input = e.target as HTMLInputElement;
-						if (input.files) void importFiles([...input.files]).finally(() => (input.value = ''));
-					}}
-				/>
-			</label>
+		<div class="button-row">
+			<md-filled-tonal-button ?disabled=${ui.busy} @click=${() => app.querySelector<HTMLInputElement>('#file-input')?.click()}>
+				${icon('upload_file', 'icon')} ファイルを読み込む
+			</md-filled-tonal-button>
 			${h.length
-				? html`<button type="button" class="ghost small" @click=${() => download(`sekigae_history_${fileStamp(new Date())}.json`, serializeHistory(h))}>
-						まとめて保存
-					</button>`
+				? html`<md-text-button @click=${() => download(`sekigae_history_${fileStamp(new Date())}.json`, serializeHistory(h))}>
+						${icon('download', 'icon')} まとめて保存
+					</md-text-button>`
 				: nothing}
+			<input
+				id="file-input"
+				type="file"
+				accept=".json,application/json"
+				multiple
+				hidden
+				@change=${(e: Event) => {
+					const input = e.target as HTMLInputElement;
+					if (input.files) void importFiles([...input.files]).finally(() => (input.value = ''));
+				}}
+			/>
 		</div>
 		${h.length === 0
-			? html`<p class="empty">まだありません。席替えのあと「この席順を保存」したファイルを、次回ここで読み込みます（複数選択・ドラッグ＆ドロップOK、最大 10 件）。</p>`
-			: html`<ul class="history">
-					${repeat(
-						h,
-						(e) => e.id,
-						(e) => html`<li class=${classMap({ off: !e.enabled, current: e.id === state.savedId })}>
-							<label class="check">
-								<input
-									type="checkbox"
+			? html`<p class="empty">まだありません。席替えのあと「この席順を保存」したファイルを、次回ここで読み込みます（複数選択・ドラッグ＆ドロップ OK、最大 10 件）。</p>`
+			: html`<md-list class="list">
+						${repeat(
+							h,
+							(e) => e.id,
+							(e) => html`<md-list-item class=${classMap({ off: !e.enabled, current: e.id === state.savedId })}>
+								<md-checkbox
+									slot="start"
+									touch-target="wrapper"
+									aria-label="${e.title}を被り判定に使う"
 									.checked=${live(e.enabled)}
 									?disabled=${ui.busy}
 									@change=${(ev: Event) =>
@@ -900,55 +964,51 @@ function historyPanel() {
 											},
 											{ keepKind: true },
 										)}
-								/>
-								<span class="h-title">${e.title}</span>
-							</label>
-							<span class="h-meta">${e.rows}×${e.cols}・${e.seats.length}人</span>
-							<button type="button" class="icon" title="この席順を今の席として表示" aria-label="${e.title}を表示" ?disabled=${ui.busy} @click=${() => loadEntry(e)}>
-								↩
-							</button>
-							<button
-								type="button"
-								class="icon"
-								title="一覧から外す"
-								aria-label="${e.title}を一覧から外す"
-								?disabled=${ui.busy}
-								@click=${() => {
-									commit((s) => void (s.history = s.history.filter((x) => x.id !== e.id)), { keepKind: true });
-									toast(`「${e.title}」を一覧から外しました（ファイルはそのまま残っています）`);
-								}}
-							>
-								✕
-							</button>
-						</li>`,
-					)}
-				</ul>
-				<p class="sub">チェックを外した席順は、被り判定に使いません。</p>`}
+								></md-checkbox>
+								<div slot="headline">${e.title}</div>
+								<div slot="supporting-text">${e.rows}×${e.cols}・${e.seats.length}人</div>
+								<div slot="end" class="end-actions">
+									<md-icon-button title="この席順を今の席として表示" aria-label="${e.title}を表示" ?disabled=${ui.busy} @click=${() => loadEntry(e)}>
+										${icon('restore')}
+									</md-icon-button>
+									<md-icon-button
+										title="一覧から外す"
+										aria-label="${e.title}を一覧から外す"
+										?disabled=${ui.busy}
+										@click=${() => {
+											commit((s) => void (s.history = s.history.filter((x) => x.id !== e.id)), { keepKind: true });
+											toast(`「${e.title}」を一覧から外しました（ファイルはそのまま残っています）`);
+										}}
+									>
+										${icon('delete')}
+									</md-icon-button>
+								</div>
+							</md-list-item>`,
+						)}
+					</md-list>
+					<p class="sub">チェックを外した席順は、被り判定に使いません。</p>`}
 	</section>`;
 }
 
 function optionsPanel() {
-	const speeds: [Speed, string][] = [
-		['normal', 'ふつう'],
-		['fast', 'はやい'],
-		['off', 'なし'],
-	];
-	return html`<section class="box">
-		<h2>🎬 アニメーション</h2>
-		<div class="seg wide">
-			${speeds.map(
-				([v, label]) => html`<button
-					type="button"
-					class=${state.speed === v ? 'on' : ''}
-					?disabled=${ui.busy}
-					@click=${() => commit((s) => void (s.speed = v), { keepKind: true })}
-				>
-					${label}
-				</button>`,
-			)}
-		</div>
+	return html`<section class="panel-card">
+		${cardTitle('animation', 'アニメーション')}
+		${segmented<Speed>(
+			[
+				['normal', 'ふつう'],
+				['fast', 'はやい'],
+				['off', 'なし'],
+			],
+			state.speed,
+			(v) => commit((s) => void (s.speed = v), { keepKind: true }),
+			'アニメーションの速さ',
+			true,
+		)}
 	</section>`;
 }
+
+const menuItem = (ic: string, label: string, onClick: () => void, cls = '') =>
+	html`<button type="button" class="menu-item ${cls}" @click=${onClick}><md-ripple></md-ripple>${icon(ic)}<span>${label}</span></button>`;
 
 function popoverView() {
 	const p = ui.popover;
@@ -958,20 +1018,19 @@ function popoverView() {
 	const isOff = cfg.disabled.includes(k);
 	const pin = activePins(cfg).get(k);
 	const who = state.arrangement.get(k);
-	return html`<div
-		class=${classMap({ popover: true, above: p.above })}
-		style="left:${p.x}px;top:${p.y}px"
-		role="dialog"
-		aria-label="${seatLabel(k)}のメニュー"
-	>
-		<div class="pop-title">${seatLabel(k)}${who !== undefined ? html`<b>・${who}番</b>` : nothing}</div>
+	return html`<div class=${classMap({ popover: true, above: p.above })} style="left:${p.x}px;top:${p.y}px" role="dialog" aria-label="${seatLabel(k)}のメニュー">
+		<md-elevation></md-elevation>
+		<div class="menu-header">
+			<span>${seatLabel(k)}</span>
+			${who !== undefined ? html`<b>${who}番</b>` : nothing}
+		</div>
 		${isOff
-			? html`<button type="button" @click=${() => toggleDisabled(k)}>✅ 使える席に戻す</button>`
+			? menuItem('check', '使える席に戻す', () => toggleDisabled(k))
 			: html`
 					${pin !== undefined
-						? html`<button type="button" @click=${() => unpin(k)}>📌 固定を解除（${pin}番）</button>`
+						? menuItem('close', `固定を解除（${pin}番）`, () => unpin(k))
 						: who !== undefined
-							? html`<button type="button" @click=${() => pinSeat(k, who)}>📌 ${who}番をこの席に固定</button>`
+							? menuItem('push_pin', `${who}番をこの席に固定`, () => pinSeat(k, who))
 							: nothing}
 					<form
 						class="pin-form"
@@ -980,20 +1039,23 @@ function popoverView() {
 							pinFromInput(k);
 						}}
 					>
-						<span class="lbl">番号を指定して固定</span>
-						<div class="row">
-							<input
-								type="text"
-								inputmode="numeric"
-								placeholder="出席番号"
-								aria-label="固定する出席番号"
-								.value=${live(ui.pinInput)}
-								@input=${(e: Event) => (ui.pinInput = (e.target as HTMLInputElement).value)}
-							/>
-							<button type="submit" class="primary">固定</button>
-						</div>
+						<md-outlined-text-field
+							label="出席番号で固定"
+							placeholder="例：7"
+							inputmode="numeric"
+							.value=${live(ui.pinInput)}
+							@input=${(e: Event) => (ui.pinInput = (e.target as HTMLInputElement).value)}
+							@keydown=${(e: KeyboardEvent) => {
+								if (e.key === 'Enter' && !e.isComposing) {
+									e.preventDefault();
+									pinFromInput(k);
+								}
+							}}
+						></md-outlined-text-field>
+						<md-filled-button type="submit">固定</md-filled-button>
 					</form>
-					<button type="button" class="danger" @click=${() => toggleDisabled(k)}>🚫 使えない席にする</button>
+					<md-divider></md-divider>
+					${menuItem('block', '使えない席にする', () => toggleDisabled(k), 'danger')}
 				`}
 	</div>`;
 }

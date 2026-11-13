@@ -13,6 +13,8 @@
 		"deploy": "npm run build && wrangler deploy"
 	},
 	"dependencies": {
+		"@material/material-color-utilities": "^0.4.0",
+		"@material/web": "^2.5.0",
 		"lit-html": "^3.3.3"
 	},
 	"devDependencies": {
