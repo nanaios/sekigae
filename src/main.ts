@@ -45,7 +45,6 @@ import {
 	mergeHistory,
 	parseSeatFile,
 	serializeHistory,
-	serializeSeating,
 } from './seatfile';
 import { type AppState, loadState, saveState, type Speed } from './store';
 import { getThemeMode, setThemeMode, studentColorVars, type ThemeMode } from './theme';
@@ -326,17 +325,21 @@ function download(name: string, text: string) {
 const sameSeats = (e: HistoryEntry, arr: Arrangement) =>
 	e.seats.length === arr.size && e.seats.every((x) => arr.get(seatKey(x.row, x.col)) === x.number);
 
+/** 「前回までの席」をまるごと 1 つのファイルにして保存する */
+function downloadHistory(history: HistoryEntry[]) {
+	download(`席替え履歴_${fileStamp(new Date())}.json`, serializeHistory(history));
+}
+
+/** いまの席順を「前回までの席」に加え、これまでの席順（最大 10 件）を 1 つのファイルに保存する */
 function saveCurrent() {
 	if (ui.busy) return;
-	let rec: HistoryEntry | undefined = state.history.find((h) => h.id === state.savedId);
-	if (rec && !sameSeats(rec, state.arrangement)) rec = undefined;
-	if (rec) {
-		download(`sekigae_${fileStamp(new Date(rec.createdAt))}.json`, serializeSeating(rec));
-		toast('同じ席順をもう一度保存しました', 'success');
+	const saved = state.history.find((h) => h.id === state.savedId);
+	if (saved && sameSeats(saved, state.arrangement)) {
+		downloadHistory(state.history);
+		toast(`これまでの席順 ${state.history.length} 件を 1 つのファイルに保存しました`, 'success');
 		return;
 	}
 	const created = makeRecord(state.config, state.arrangement, state.kind === 'shuffled' && state.at ? new Date(state.at) : new Date());
-	download(`sekigae_${fileStamp(new Date(created.createdAt))}.json`, serializeSeating(created));
 	const res = mergeHistory(state.history, [created]);
 	commit(
 		(s) => {
@@ -345,10 +348,10 @@ function saveCurrent() {
 		},
 		{ keepKind: true },
 	);
+	downloadHistory(res.history);
 	toast(
-		res.dropped.length
-			? `ファイルに保存し、「前回までの席」に追加しました（上限 10 件のため古い ${res.dropped.length} 件を外しました）`
-			: 'ファイルに保存し、「前回までの席」にも追加しました',
+		`この席順を加えて、これまでの席順 ${res.history.length} 件を 1 つのファイルに保存しました` +
+			(res.dropped.length ? `（上限 10 件のため、いちばん古い ${res.dropped.length} 件を外しました）` : ''),
 		'success',
 	);
 }
@@ -785,7 +788,7 @@ function actionsView() {
 				${icon(ui.dopa ? 'casino' : 'shuffle', 'icon')}
 				${ui.busy ? (ui.dopa ? 'ガチャ中…' : '席替え中…') : ui.dopa ? '席替えガチャを回す!!' : '席替えする'}
 			</md-filled-button>
-			<md-filled-tonal-button class=${classMap({ 'save-btn': true, attention: needSave })} @click=${saveCurrent} ?disabled=${ui.busy || unseated.length > 0}>
+			<md-filled-tonal-button class=${classMap({ 'save-btn': true, unsaved: needSave })} @click=${saveCurrent} ?disabled=${ui.busy || unseated.length > 0}>
 				${icon('save', 'icon')} ${state.savedId ? 'もう一度保存' : 'この席順を保存'}
 			</md-filled-tonal-button>
 		</div>
@@ -799,7 +802,9 @@ function actionsView() {
 						>`}
 		</p>
 		${needSave
-			? html`<p class="avoid-note save-hint">${icon('lightbulb')}<span>この席に決めたら「保存」しておくと、次回の席替えで被らないようにできます</span></p>`
+			? html`<p class="avoid-note save-hint">
+					${icon('lightbulb')}<span>この席に決めたら「保存」を押してください。これまでの席順とまとめて 1 つのファイルになり、次回の席替えで被らないようにできます</span>
+				</p>`
 			: nothing}`;
 }
 
@@ -883,7 +888,7 @@ function pinsPanel() {
 						</md-list-item>`,
 					)}
 				</md-list>`
-			: html`<p class="empty">席をクリック →「番号を指定して固定」で、特定の番号の人をその席に固定できます（例：目が悪い人を前の席に）。</p>`}
+			: html`<p class="empty">席をクリック →「出席番号で固定」で、特定の番号の人をその席に固定できます（例：目が悪い人を前の席に）。</p>`}
 	</section>`;
 }
 
@@ -905,8 +910,15 @@ function historyPanel() {
 				${icon('upload_file', 'icon')} ファイルを読み込む
 			</md-filled-tonal-button>
 			${h.length
-				? html`<md-text-button @click=${() => download(`sekigae_history_${fileStamp(new Date())}.json`, serializeHistory(h))}>
-						${icon('download', 'icon')} まとめて保存
+				? html`<md-text-button
+						title="いまの一覧を、そのまま 1 つのファイルに保存します"
+						?disabled=${ui.busy}
+						@click=${() => {
+							downloadHistory(h);
+							toast(`これまでの席順 ${h.length} 件を 1 つのファイルに保存しました`, 'success');
+						}}
+					>
+						${icon('download', 'icon')} 履歴ファイルを保存
 					</md-text-button>`
 				: nothing}
 			<input
@@ -922,7 +934,9 @@ function historyPanel() {
 			/>
 		</div>
 		${h.length === 0
-			? html`<p class="empty">まだありません。席替えのあと「この席順を保存」したファイルを、次回ここで読み込みます（複数選択・ドラッグ＆ドロップ OK、最大 10 件）。</p>`
+			? html`<p class="empty">
+					まだありません。「この席順を保存」を押すと、これまでの席順（最大 10 件）が 1 つの履歴ファイルにまとめて保存されます。次回はそのファイルを読み込むだけで OK です（ドラッグ＆ドロップも可）。
+				</p>`
 			: html`<md-list class="list">
 						${repeat(
 							h,
@@ -964,7 +978,9 @@ function historyPanel() {
 							</md-list-item>`,
 						)}
 					</md-list>
-					<p class="sub">チェックを外した席順は、被り判定に使いません。</p>`}
+					<p class="sub">
+						チェックを外した席順は、被り判定に使いません。保存するとこの一覧がまるごと 1 つのファイルになるので、取っておくのは最新のファイルだけで OK です。
+					</p>`}
 	</section>`;
 }
 

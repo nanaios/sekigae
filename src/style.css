@@ -527,16 +527,17 @@ md-icon {
 	--md-filled-tonal-button-label-text-size: 16px;
 	border-radius: 28px;
 }
-.save-btn.attention {
+/* まだ保存していない席替え結果のときは、色だけ変える（点滅はしない） */
+.save-btn.unsaved {
 	--md-filled-tonal-button-container-color: var(--md-sys-color-tertiary-container);
 	--md-filled-tonal-button-label-text-color: var(--md-sys-color-on-tertiary-container);
+	--md-filled-tonal-button-hover-label-text-color: var(--md-sys-color-on-tertiary-container);
+	--md-filled-tonal-button-focus-label-text-color: var(--md-sys-color-on-tertiary-container);
+	--md-filled-tonal-button-pressed-label-text-color: var(--md-sys-color-on-tertiary-container);
 	--md-filled-tonal-button-icon-color: var(--md-sys-color-on-tertiary-container);
-	animation: attention 1.6s ease-in-out infinite;
-}
-@keyframes attention {
-	50% {
-		box-shadow: 0 0 0 8px color-mix(in srgb, var(--md-sys-color-tertiary) 22%, transparent);
-	}
+	--md-filled-tonal-button-hover-icon-color: var(--md-sys-color-on-tertiary-container);
+	--md-filled-tonal-button-focus-icon-color: var(--md-sys-color-on-tertiary-container);
+	--md-filled-tonal-button-pressed-icon-color: var(--md-sys-color-on-tertiary-container);
 }
 
 .avoid-note {

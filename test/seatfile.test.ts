@@ -38,6 +38,24 @@ describe('席順ファイル', () => {
 		expect(recs.map((r) => r.id)).toEqual(['a', 'b']);
 	});
 
+	it('履歴ファイル 1 つで全件が戻り、チェックを外したものは外れたまま', () => {
+		const arr = normalizeArrangement(cfg, new Map()).arrangement;
+		const older: HistoryEntry = { ...makeRecord(cfg, arr, new Date('2026-10-01T00:00:00Z'), 'old'), enabled: false };
+		const newer: HistoryEntry = { ...makeRecord(cfg, arr, new Date('2026-11-01T00:00:00Z'), 'new'), enabled: true };
+		const recs = parseSeatFile(serializeHistory([newer, older]));
+		expect(recs.map((r) => [r.id, r.enabled])).toEqual([
+			['new', undefined],
+			['old', false],
+		]);
+		const merged = mergeHistory([], recs);
+		expect(merged.history.map((e) => [e.id, e.enabled])).toEqual([
+			['new', true],
+			['old', false],
+		]);
+		// 同じファイルをもう一度読んでも増えない
+		expect(mergeHistory(merged.history, recs)).toMatchObject({ added: 0, duplicates: 2 });
+	});
+
 	it('壊れたファイルや別のファイルはわかりやすく弾く', () => {
 		expect(() => parseSeatFile('not json')).toThrow(SeatFileError);
 		expect(() => parseSeatFile('{"hello":1}')).toThrow('席替えアプリのファイルではありません');

@@ -30,6 +30,9 @@ export interface HistoryEntry extends SeatingRecord {
 	enabled: boolean;
 }
 
+/** ファイルから読んだ席順。履歴ファイルでチェックを外していたものは enabled: false が付く */
+export type ParsedSeating = SeatingRecord & { enabled?: boolean };
+
 export class SeatFileError extends Error {}
 
 const fail = (message: string): never => {
@@ -112,12 +115,14 @@ export function serializeSeating(rec: SeatingRecord): string {
 	return JSON.stringify(toJson(rec), null, 2) + '\n';
 }
 
-export function serializeHistory(records: SeatingRecord[], now = new Date()): string {
-	return JSON.stringify({ format: HISTORY_FORMAT, version: 1, exportedAt: now.toISOString(), seatings: records.map(toJson) }, null, 2) + '\n';
+/** これまでの席順（最大 10 件）を 1 つのファイルにまとめる。チェックを外したものは enabled: false で残す */
+export function serializeHistory(records: ParsedSeating[], now = new Date()): string {
+	const seatings = records.map((r) => (r.enabled === false ? { ...toJson(r), enabled: false } : toJson(r)));
+	return JSON.stringify({ format: HISTORY_FORMAT, version: 1, exportedAt: now.toISOString(), seatings }, null, 2) + '\n';
 }
 
-/** 1 つの席順ファイル、または「まとめて保存」したファイルを読む */
-export function parseSeatFile(text: string): SeatingRecord[] {
+/** 履歴ファイル（まとめた 1 ファイル）、または以前の 1 件ずつのファイルを読む */
+export function parseSeatFile(text: string): ParsedSeating[] {
 	let data: unknown;
 	try {
 		data = JSON.parse(text.replace(/^﻿/, ''));
@@ -139,7 +144,7 @@ export function parseSeatFile(text: string): SeatingRecord[] {
 	return fail('席替えアプリのファイルではありません');
 }
 
-function parseSeating(d: unknown): SeatingRecord {
+function parseSeating(d: unknown): ParsedSeating {
 	if (!isObj(d)) return fail('形式が正しくありません');
 	if (d.version !== 1) return fail(`対応していないバージョンです（${String(d.version)}）`);
 	const layout = isObj(d.layout) ? d.layout : fail('レイアウト情報がありません');
@@ -197,11 +202,12 @@ function parseSeating(d: unknown): SeatingRecord {
 		studentCount,
 		missing,
 		seats,
+		...(d.enabled === false ? { enabled: false } : {}),
 	};
 }
 
 /** 履歴に追加する。ID が同じものは追加しない。新しい順に最大 10 件 */
-export function mergeHistory(current: HistoryEntry[], incoming: SeatingRecord[]) {
+export function mergeHistory(current: HistoryEntry[], incoming: ParsedSeating[]) {
 	const byId = new Map(current.map((e) => [e.id, e] as const));
 	let added = 0;
 	let duplicates = 0;
@@ -210,7 +216,7 @@ export function mergeHistory(current: HistoryEntry[], incoming: SeatingRecord[])
 			duplicates++;
 			continue;
 		}
-		byId.set(rec.id, { ...rec, enabled: true });
+		byId.set(rec.id, { ...rec, enabled: rec.enabled !== false });
 		added++;
 	}
 	const all = [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
