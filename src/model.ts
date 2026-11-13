@@ -129,11 +129,15 @@ export function normalizeArrangement(cfg: Config, prev: Arrangement): { arrangem
 	return { arrangement: next, unseated };
 }
 
-/** 暗号学的乱数（0 以上 1 未満） */
+/** 暗号学的乱数（0 以上 1 未満）。1 回の席替えで何万回も使うので、まとめて作って順に使う */
+const rngBuffer = new Uint32Array(1024);
+let rngPos = rngBuffer.length;
 export const cryptoRng: Rng = () => {
-	const a = new Uint32Array(1);
-	crypto.getRandomValues(a);
-	return a[0] / 2 ** 32;
+	if (rngPos >= rngBuffer.length) {
+		crypto.getRandomValues(rngBuffer);
+		rngPos = 0;
+	}
+	return rngBuffer[rngPos++] / 2 ** 32;
 };
 
 /** 再現できる乱数（テスト用） */
