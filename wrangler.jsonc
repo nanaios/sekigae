@@ -1,0 +1,18 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	// 静的ファイルだけを配信する Worker（サーバー側の処理・保存はなし）
+	"name": "sekigae",
+	"compatibility_date": "2026-11-01",
+	"workers_dev": false,
+	"preview_urls": false,
+	"routes": [
+		{
+			"pattern": "sekigae.nanaryo.cc",
+			"custom_domain": true
+		}
+	],
+	"assets": {
+		"directory": "./dist",
+		"not_found_handling": "single-page-application"
+	}
+}
