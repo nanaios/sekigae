@@ -346,6 +346,8 @@ export function comboHide() {
 
 export function vibrate(pattern: number | number[]) {
 	try {
+		// まだ画面を触っていないと、ブラウザがエラーを出すので呼ばない
+		if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
 		navigator.vibrate?.(pattern);
 	} catch {
 		// 対応していない端末は無視
