@@ -294,7 +294,10 @@ async function importFiles(files: Iterable<File>) {
 		}
 	}
 	if (recs.length) {
-		const fresh = state.kind === 'order';
+		// 出席番号順のまま、または過去の席順を表示しているだけなら、もっと新しい席順が来たときに表示を切り替える
+		// （席替えの結果や手直しを表示しているときは、上書きしない）
+		const shownAt =
+			state.kind === 'order' ? '' : state.kind === 'loaded' ? (state.history.find((h) => h.id === state.savedId)?.createdAt ?? '') : null;
 		const res = mergeHistory(state.history, recs);
 		commit((s) => {
 			s.history = res.history;
@@ -303,9 +306,10 @@ async function importFiles(files: Iterable<File>) {
 		if (res.duplicates) msg += `（${res.duplicates} 件は読み込み済み）`;
 		if (res.dropped.length) msg += `。上限 10 件のため、古い ${res.dropped.length} 件を外しました`;
 		toast(msg, 'success');
-		if (fresh && res.added > 0) {
-			loadEntry(res.history[0], true);
-			toast(`いちばん新しい「${res.history[0].title}」を今の席として表示しました`);
+		const newest = res.history[0];
+		if (res.added > 0 && shownAt !== null && newest.id !== state.savedId && newest.createdAt > shownAt) {
+			loadEntry(newest, true);
+			toast(`いちばん新しい「${newest.title}」を今の席として表示しました`);
 		}
 	}
 	for (const m of errors) toast(m, 'error');
