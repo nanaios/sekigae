@@ -43,8 +43,8 @@ apply();
 
 export const getThemeMode = () => mode;
 
-export function cycleThemeMode(): ThemeMode {
-	mode = mode === 'auto' ? 'light' : mode === 'light' ? 'dark' : 'auto';
+export function setThemeMode(next: ThemeMode): ThemeMode {
+	mode = next;
 	try {
 		localStorage.setItem(STORAGE_KEY, mode);
 	} catch {

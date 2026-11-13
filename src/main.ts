@@ -2,6 +2,7 @@ import '@material/web/button/filled-button.js';
 import '@material/web/button/filled-tonal-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/checkbox/checkbox.js';
+import '@material/web/dialog/dialog.js';
 import '@material/web/divider/divider.js';
 import '@material/web/elevation/elevation.js';
 import '@material/web/focus/md-focus-ring.js';
@@ -47,7 +48,7 @@ import {
 	serializeSeating,
 } from './seatfile';
 import { type AppState, loadState, saveState, type Speed } from './store';
-import { cycleThemeMode, getThemeMode, studentColorVars, type ThemeMode } from './theme';
+import { getThemeMode, setThemeMode, studentColorVars, type ThemeMode } from './theme';
 import './style.css';
 
 const app = document.getElementById('app')!;
@@ -72,6 +73,7 @@ const ui = {
 	skip: false,
 	landed: false,
 	dragging: false,
+	settingsOpen: false,
 };
 
 function normalize() {
@@ -568,17 +570,14 @@ const logo = html`<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
 	<rect x="21" y="21" width="7" height="6" rx="1.6" class="logo-b" />
 </svg>`;
 
-const THEME_ICON: Record<ThemeMode, string> = { auto: 'brightness_auto', light: 'light_mode', dark: 'dark_mode' };
-const THEME_LABEL: Record<ThemeMode, string> = { auto: 'テーマ：自動（端末に合わせる）', light: 'テーマ：ライト', dark: 'テーマ：ダーク' };
-
-function onCycleTheme() {
-	const m = cycleThemeMode();
+function setSettingsOpen(open: boolean) {
+	if (ui.settingsOpen === open) return;
+	if (open) closePopover();
+	ui.settingsOpen = open;
 	update();
-	toast(THEME_LABEL[m]);
 }
 
 function view(): TemplateResult {
-	const tm = getThemeMode();
 	return html`
 		${ui.dopa ? dopaLayer() : nothing}
 		<header class="top-app-bar">
@@ -592,7 +591,9 @@ function view(): TemplateResult {
 				<span class="subtitle">${ui.dopa ? 'DOPAGAKI MODE' : 'SEKIGAE'}</span>
 			</div>
 			<div class="app-actions">
-				<md-icon-button @click=${onCycleTheme} title=${THEME_LABEL[tm]} aria-label=${THEME_LABEL[tm]}>${icon(THEME_ICON[tm])}</md-icon-button>
+				<md-icon-button @click=${() => setSettingsOpen(true)} ?disabled=${ui.busy} title="その他の設定" aria-label="その他の設定">
+					${icon('settings')}
+				</md-icon-button>
 				<md-icon-button @click=${openFullscreen} title="全画面で表示" aria-label="全画面で表示">${icon('fullscreen')}</md-icon-button>
 				<md-icon-button @click=${() => window.print()} title="印刷" aria-label="印刷">${icon('print')}</md-icon-button>
 			</div>
@@ -607,11 +608,11 @@ function view(): TemplateResult {
 		<main class="layout">
 			<section class="stage">${stageHead()} ${boardView()} ${actionsView()}</section>
 			<aside class="panel">
-				${layoutPanel()} ${studentsPanel()} ${pinsPanel()} ${historyPanel()} ${optionsPanel()}
+				${layoutPanel()} ${studentsPanel()} ${pinsPanel()} ${historyPanel()}
 				<p class="privacy">${icon('lock')}<span>データはこのブラウザの中と、保存したファイルにだけ残ります。サーバーには送信しません。</span></p>
 			</aside>
 		</main>
-		${popoverView()}
+		${popoverView()} ${settingsDialog()}
 		<div class="snackbars" role="status" aria-live="polite">
 			${repeat(
 				ui.toasts,
@@ -696,17 +697,6 @@ function stageHead() {
 				${pins ? html`<span title="固定">${icon('push_pin')}${pins}人</span>` : nothing}
 			</div>
 			<div class="print-only print-title">席替え ${label.title}</div>
-		</div>
-		<div class="view-row">
-			${segmented<'student' | 'teacher'>(
-				[
-					['student', '生徒から見た向き', 'group'],
-					['teacher', '先生から見た向き', 'co_present'],
-				],
-				state.teacherView ? 'teacher' : 'student',
-				(v) => commit((s) => void (s.teacherView = v === 'teacher'), { animate: true, keepKind: true }),
-				'表示の向き',
-			)}
 		</div>`;
 }
 
@@ -847,18 +837,6 @@ function layoutPanel() {
 			${numberField('縦', cfg.rows, LIMITS.rows.min, LIMITS.rows.max, (v) => setDim('rows', v), '席')}
 			${numberField('横', cfg.cols, LIMITS.cols.min, LIMITS.cols.max, (v) => setDim('cols', v), '席')}
 		</div>
-		<div class="field-row">
-			<span class="field-label">窓の位置</span>
-			${segmented<'left' | 'right'>(
-				[
-					['left', '左側'],
-					['right', '右側'],
-				],
-				cfg.windowSide,
-				(side) => commit((s) => void (s.config.windowSide = side), { keepKind: true }),
-				'窓の位置',
-			)}
-		</div>
 		<p class="hint">${icon('info')}<span>席をクリックすると、<b>使えない席</b>にしたり<b>番号を固定</b>したりできます。</span></p>
 		${offCount
 			? html`<div class="sub-row">
@@ -990,21 +968,84 @@ function historyPanel() {
 	</section>`;
 }
 
-function optionsPanel() {
-	return html`<section class="panel-card">
-		${cardTitle('animation', 'アニメーション')}
-		${segmented<Speed>(
-			[
-				['normal', 'ふつう'],
-				['fast', 'はやい'],
-				['off', 'なし'],
-			],
-			state.speed,
-			(v) => commit((s) => void (s.speed = v), { keepKind: true }),
-			'アニメーションの速さ',
-			true,
-		)}
+const settingRow = (title: string, sub: string, control: TemplateResult) =>
+	html`<section class="setting">
+		<div class="setting-title">${title}</div>
+		${sub ? html`<div class="setting-sub">${sub}</div>` : nothing} ${control}
 	</section>`;
+
+/** あまり変えない設定は、上部バーの歯車から開くダイアログにまとめる */
+function settingsDialog() {
+	const cfg = state.config;
+	return html`<md-dialog class="settings-dialog" .open=${ui.settingsOpen} @closed=${() => setSettingsOpen(false)}>
+		<span slot="headline">その他の設定</span>
+		<div slot="content" class="settings">
+			${settingRow(
+				'表示の向き',
+				'黒板を上にする（生徒から見た向き）か、下にする（先生から見た向き）か',
+				segmented<'student' | 'teacher'>(
+					[
+						['student', '生徒から', 'group'],
+						['teacher', '先生から', 'co_present'],
+					],
+					state.teacherView ? 'teacher' : 'student',
+					(v) => commit((s) => void (s.teacherView = v === 'teacher'), { animate: true, keepKind: true }),
+					'表示の向き',
+					true,
+				),
+			)}
+			${settingRow(
+				'窓の位置',
+				'生徒から見て、窓がどちら側にあるか（「窓側」「廊下側」の表示に使います）',
+				segmented<'left' | 'right'>(
+					[
+						['left', '左側'],
+						['right', '右側'],
+					],
+					cfg.windowSide,
+					(side) => commit((s) => void (s.config.windowSide = side), { keepKind: true }),
+					'窓の位置',
+					true,
+				),
+			)}
+			${settingRow(
+				'席替えのアニメーション',
+				'',
+				segmented<Speed>(
+					[
+						['normal', 'ふつう'],
+						['fast', 'はやい'],
+						['off', 'なし'],
+					],
+					state.speed,
+					(v) => commit((s) => void (s.speed = v), { keepKind: true }),
+					'アニメーションの速さ',
+					true,
+				),
+			)}
+			${settingRow(
+				'テーマ',
+				'',
+				segmented<ThemeMode>(
+					[
+						['auto', '自動', 'brightness_auto'],
+						['light', 'ライト', 'light_mode'],
+						['dark', 'ダーク', 'dark_mode'],
+					],
+					getThemeMode(),
+					(m) => {
+						setThemeMode(m);
+						update();
+					},
+					'テーマ',
+					true,
+				),
+			)}
+		</div>
+		<div slot="actions">
+			<md-text-button @click=${() => setSettingsOpen(false)}>閉じる</md-text-button>
+		</div>
+	</md-dialog>`;
 }
 
 const menuItem = (ic: string, label: string, onClick: () => void, cls = '') =>

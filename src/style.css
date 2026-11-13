@@ -197,19 +197,7 @@ md-icon {
 	gap: 4px;
 }
 
-.view-row {
-	display: flex;
-	justify-content: flex-end;
-	margin: 12px 0 8px;
-}
 @media (max-width: 600px) {
-	.view-row .segmented {
-		width: 100%;
-	}
-	.view-row .seg {
-		padding: 0 6px;
-		font-size: 13px;
-	}
 	.stage {
 		padding: 14px 12px;
 		border-radius: 24px;
@@ -270,6 +258,7 @@ md-icon {
 	display: flex;
 	flex-direction: column;
 	gap: 14px;
+	margin-top: 16px;
 }
 
 .front {
@@ -622,18 +611,6 @@ md-outlined-text-field {
 	min-width: 0;
 }
 
-.field-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	margin-top: 16px;
-}
-.field-label {
-	font-size: 14px;
-	color: var(--md-sys-color-on-surface-variant);
-}
-
 .hint {
 	display: flex;
 	align-items: flex-start;
@@ -807,6 +784,33 @@ md-list-item.current {
 	margin: 4px 0;
 }
 
+/* ---------- その他の設定（ダイアログ） ---------- */
+
+.settings-dialog {
+	width: min(480px, calc(100vw - 32px));
+	max-width: min(480px, calc(100vw - 32px));
+}
+.settings {
+	display: flex;
+	flex-direction: column;
+	gap: 22px;
+	padding-top: 4px;
+}
+.setting-title {
+	font-size: 15px;
+	font-weight: 500;
+	color: var(--md-sys-color-on-surface);
+}
+.setting-sub {
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--md-sys-color-on-surface-variant);
+	margin-top: 2px;
+}
+.setting .segmented {
+	margin-top: 10px;
+}
+
 /* ---------- スナックバー ---------- */
 
 .snackbars {
@@ -908,7 +912,6 @@ md-list-item.current {
 	.avoid-note,
 	.stats,
 	.now,
-	.view-row,
 	.snackbars,
 	.popover,
 	.ticker,
